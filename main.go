@@ -2,10 +2,8 @@ package main
 
 import (
 	"database/sql"
-	"database/sql/driver"
 	"fmt"
 	"log/slog"
-	"reflect"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/guregu/null/v6"
@@ -16,23 +14,28 @@ import (
 var v *validator.Validate
 
 func main() {
-	v = validator.New(
-		// Opt-in to v11+ behavior
-		validator.WithRequiredStructEnabled(),
-	)
+	// Opt-in to v11+ behavior
+	v = validator.New(validator.WithRequiredStructEnabled())
 
-	// Internally `validator.Validate` uses reflection to support data validation.
+	// Internally [validator.Validate] uses reflection to support data validation.
 	// The implementation need to support beyond primitive data types, it needs to be able to handle complex struct meaningfully.
 	// `time.Time` is a good example of complex struct that might be used to represent a piece of information.
 	//
-	// In order to aid `validator.Validate` to extract custom type value that will be run through validation rules
+	// In order to aid [validator.Validate] to extract custom type value that will be run through validation rules
 	// we need to provide CustomTypeFunc that will be used to provide underlying value against custom types registered with it.
 
-	// As mention in docs RegisterCustomTypeFunc is not thread-safe it is intended that these all be registered prior to any validation
+	// As mention in docs, RegisterCustomTypeFunc is not thread-safe it is intended that these all be registered prior to any validation
 
 	// Why these types: https://github.com/nadhifikbarw/x-go-painless-null/
 	// Register `sql.NullXxX` types
 	v.RegisterCustomTypeFunc(
+		// ValidateValuer provides stricter behavior that nil value
+		// always come from underlying `Valuer` field, since it panics
+		// when Valuer return non-nill error value leaving us with no
+		// good value as fallback that doesn't semantically being used
+		//
+		// See [NullValidateValuer] for alternative behavior where it
+		// returns nil as fallback instead of panic.
 		ValidateValuer,
 		sql.NullBool{},
 		sql.NullByte{},
@@ -60,7 +63,7 @@ func main() {
 
 	// Register `pgtype.XxX` types (Non-exhaustive)
 	v.RegisterCustomTypeFunc(
-		ValidateValuer,
+		NullValidateValuer,
 		pgtype.Bool{},
 		pgtype.Float4{},
 		pgtype.Int4{},
@@ -93,28 +96,4 @@ func main() {
 			}
 		}
 	}
-}
-
-// This CustomTypeFunc  must only get registered against types that implement
-// database/sql/driver.Valuer interface, it panics when it doesn't get Valuer type
-//
-// ValidateValuer implement validate.CustomTypeFunc interface
-func ValidateValuer(field reflect.Value) interface{} {
-	// Assert whether field implements `Valuer` interface
-	if valuer, ok := field.Interface().(driver.Valuer); ok {
-		// Provide underlying field value
-		if val, err := valuer.Value(); err == nil {
-			// `nil` value here is possible
-			return val
-		}
-		// Valuer types can't return error for validation
-		// because there is no good fallback value that doesn't
-		// have the possibility to trigger false downstream validations
-		panic("Valuer field returns error")
-	}
-
-	// Returning nil as fallback is not ideal either because some Valuer types
-	// need to use nil value semantically, returning nil might produce unexpected
-	// false downstream validation result (e.g. when you need to validate third-party API that use null-value meaningfully)
-	panic("not a Valuer field")
 }
