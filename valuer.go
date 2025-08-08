@@ -11,23 +11,30 @@ var _ validator.CustomTypeFunc = ValidateValuer
 var _ validator.CustomTypeFunc = NullValidateValuer
 
 // ValidateValuer returns underlying value from [driver.Valuer] type for validation.
+// Type registered using this must its nil/zero value and always return nil error value
 //
 // It panics if non-`Valuer` field is passed for validation.
 // It panics when [driver.Valuer] returns non-nil error value.
 //
-// See [NullValidateValuer] if you want to fallback returning nil when non-nil error returned.
+// See [NullValidateValuer] for Valuer type that is allowed to return nil as fallback.
 //
 // ValidateValuer implements [validator.CustomTypeFunc] interface.
 func ValidateValuer(field reflect.Value) interface{} {
-	if valuer, ok := field.Interface().(driver.Valuer); ok {
-		if val, err := valuer.Value(); err == nil {
-			return val
-		}
-		// Panic when `Valuer` return non-nill error, because `Valuer` registered against this function
-		// attach semantic meaning to nil value, panic to avoid implicit false validation behavior
+	valuer, ok := field.Interface().(driver.Valuer)
+	if !ok {
+		panic("not a Valuer field")
+	}
+
+	// Panic when `Valuer` return non-nill error
+	// `Valuer` registered against this function
+	// typically attach semantic meaning to nil value
+	// hence it panics to avoid incorrect validation behavior
+	val, err := valuer.Value()
+	if err != nil {
 		panic("Valuer field returns non-nil error")
 	}
-	panic("not a Valuer field")
+
+	return val
 }
 
 // NullValidateValuer returns underlying value from [driver.Valuer] type for validation.
@@ -35,16 +42,23 @@ func ValidateValuer(field reflect.Value) interface{} {
 //
 // It panics if non-`Valuer` field is passed for validation.
 //
-// See [ValidateValuer] for strict behavior to handle non-nil error from
+// See [ValidateValuer] for stricter behavior that panics when Valuer returns error
 //
 // NullValidateValuer implements [validator.CustomTypeFunc] interface.
 func NullValidateValuer(field reflect.Value) interface{} {
-	if valuer, ok := field.Interface().(driver.Valuer); ok {
-		if val, err := valuer.Value(); err == nil {
-			return val
-		}
-		// Returns nil as fallback when receiving non-nill error
+	valuer, ok := field.Interface().(driver.Valuer)
+	if !ok {
+		panic("not a Valuer field")
+	}
+
+	// Return nil when `Valuer` return non-nill error
+	// `Valuer` registered against this function typically doesn't
+	// attach nil value semantically hence using nil value as fallback
+	// value is permissible
+	val, err := valuer.Value()
+	if err != nil {
 		return nil
 	}
-	panic("not a Valuer field")
+
+	return val
 }

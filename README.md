@@ -1,14 +1,16 @@
-# Allowing custom fields with `go-playground/validator`
+# Validating Custom Type with `go-playground/validator`
 
-`go-playground/validator` is great, but documentation on some of its features can be too implicit and hard to parse through without reading its internals
+[`go-playground/validator`](https://github.com/go-playground/validator) is typically the de-facto recommendation if you want ready-made validation in Go. I found some documentation  of its features can be too implicit for may taste and hard to parse through without reading its internals.
 
-Here's more explicitly documented example on how to register custom types to allow types such as `database/sql/driver.Valuer` for validation with `go-playground/validator`
+Here I expanded the example on how to configure validator to properly handle custom type, specifically allowing custom type that implements `database/sql/driver.Valuer` interface for validation.
 
-## How CustomTypeFunc being maintained and used
+## How `CustomTypeFunc` being maintained and used
 
-> This is v10 behavior explanation, in case future internals get changed.
+> This explanation is v10 behavior, future internals may get changed.
 
-For each type registered using a particular `validator.CustomTypeFunc`, it's maintained as simple map between type and those function. It explains why you need to list all your initialized struct when calling this function
+Any custom type that need want to be validated need to be registered alongside its `validator.CustomTypeFunc`, this `CustomTypeFunc` is maintained as simple map.
+
+Since Validator uses reflection internally, it's necessary to provide `CustomTypeFunc` for each custom type to provide the ability to get underlying field value from such custom type.
 
 ```go
 func (v *Validate) RegisterCustomTypeFunc(fn CustomTypeFunc, types ...interface{}) {
@@ -40,8 +42,6 @@ v.RegisterCustomTypeFunc(
 )
 ```
 
-Whenever validator perform validation, validation accept `interface{}` as its input, so it uses reflection to guide how they would extract underlying value that need to be validated based on its validation tag.
+When validating a struct, validator accepts `interface{}` as input, it uses reflection to guide what each field type they're dealing with, if it encounters field of custom type, it then consults this internal `CustomTypeFunc` map and call the registered function to resolve the underlying value of the custom field.
 
-Validator keeps track whether any custom type functions has been registered. It will then check whether CustomTypeFunc for a particular type exists to resolve underlying value of particular type.
-
-Since validator maintain these CustomTypeFunc on type-level reflection, you're then required to register all custom type that need to be validated using validator.
+To be more explicit, this value resolution is performed recursively. So your `CustomTypeFunc` may actually return  another custom type, the validator will keep trying to resolve the underlying value of the subsequent custom type until it encounters primitives that they recognize or no longer recognize a custom type that's unregistered.
